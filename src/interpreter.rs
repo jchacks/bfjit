@@ -1,12 +1,16 @@
-use std::{
-    io::{Read, Write},
-    time::Duration,
-};
+use std::io::{Read, Write};
+
+use log::debug;
 
 use crate::parser::Op;
 
-struct State<O: Write, I: Read> {
-    data: usize,
+#[derive(Debug)]
+enum InterpreterError {
+    Underflow,
+}
+
+pub struct State<O: Write, I: Read> {
+    head: usize,
     instruction: usize,
     program: Vec<Op>,
     tape: [u8; 30000],
@@ -15,9 +19,9 @@ struct State<O: Write, I: Read> {
 }
 
 impl<O: Write, I: Read> State<O, I> {
-    fn new(program: Vec<Op>, output: O, input: I) -> Self {
+    pub fn new(program: Vec<Op>, output: O, input: I) -> Self {
         Self {
-            data: 0,
+            head: 0,
             instruction: 0,
             program,
             tape: [0; 30000],
@@ -29,17 +33,23 @@ impl<O: Write, I: Read> State<O, I> {
     fn step(&mut self) -> bool {
         match self.program.get(self.instruction) {
             Some(op) => {
-                // println!(
-                //     "Instruction {:?} Data {:?} Op {:?}",
-                //     self.instruction, self.data, op
-                // );
+                debug!(
+                    "Instruction {:?} Data {:?} Op {:?}",
+                    self.instruction, self.head, op
+                );
                 match op {
-                    Op::Inc(i) => self.tape[self.data] += i,
-                    Op::Dec(i) => self.tape[self.data] -= i,
-                    Op::Right(i) => self.data += i,
-                    Op::Left(i) => self.data -= i,
+                    Op::Inc(i) => self.tape[self.head] += i,
+                    Op::Dec(i) => self.tape[self.head] -= i,
+                    Op::Right(i) => self.head += i,
+                    Op::Left(i) => {
+                        self.head = self
+                            .head
+                            .checked_sub(*i)
+                            .ok_or(InterpreterError::Underflow)
+                            .unwrap();
+                    }
                     Op::Output(i) => {
-                        let data = vec![self.tape[self.data]; (*i).into()];
+                        let data = vec![self.tape[self.head]; (*i).into()];
                         for v in data {
                             write!(self.output, "{:}", v as char).expect("write to output");
                         }
@@ -49,12 +59,12 @@ impl<O: Write, I: Read> State<O, I> {
                         self.input.read_exact(&mut data).expect("read from input");
                     }
                     Op::JumpZero(val) => {
-                        if self.tape[self.data] == 0 {
+                        if self.tape[self.head] == 0 {
                             self.instruction = *val;
                         }
                     }
                     Op::JumpNonZero(val) => {
-                        if self.tape[self.data] != 0 {
+                        if self.tape[self.head] != 0 {
                             self.instruction = *val;
                         }
                     }
@@ -65,15 +75,13 @@ impl<O: Write, I: Read> State<O, I> {
             None => false,
         }
     }
-}
 
-pub fn interpret(ops: Vec<Op>, inp: impl Read, out: impl Write) {
-    let mut state = State::new(ops, out, inp);
-    let mut max_data = 0;
-    while state.step() {
-        max_data = max_data.max(state.data);
-        // println!("{max_data:?} {:?}", &state.tape[0..max_data + 1]);
-        // std::thread::sleep(Duration::from_millis(100))
+    pub fn run(&mut self) {
+        let mut max_head = 0;
+        while self.step() {
+            max_head = max_head.max(self.head);
+            debug!("{max_head:?} {:?}", &self.tape[0..max_head + 1]);
+        }
+        self.output.flush().expect("flush");
     }
-    state.output.flush().expect("flush");
 }

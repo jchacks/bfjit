@@ -189,7 +189,6 @@ pub fn parse(buffer: String) -> Result<Vec<Op>, ParserError> {
         parser
             .ops
             .into_iter()
-            .inspect(|pop| println!("{pop:?}"))
             .collect::<Vec<ParserOp>>()
             .into_iter()
             .map(TryInto::<Op>::try_into)
