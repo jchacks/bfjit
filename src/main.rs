@@ -7,7 +7,7 @@ fn main() {
     let mut stdin = std::io::stdin().lock();
     let num = stdin.read_to_string(&mut buffer).expect("read from stdin");
     println!("Read {num} chars");
-    let ops = parser::parse(buffer);
+    let ops = parser::parse(buffer).expect("parse ops");
     println!("Ops: {ops:?}");
 
     let stdout = std::io::stdout().lock();

@@ -40,13 +40,24 @@ impl<O: Write, I: Read> State<O, I> {
                     Op::Left(i) => self.data -= i,
                     Op::Output(i) => {
                         let data = vec![self.tape[self.data]; (*i).into()];
-                        write!(self.output, "{:?}", data).expect("write to output");
+                        for v in data {
+                            write!(self.output, "{:}", v as char).expect("write to output");
+                        }
                     }
                     Op::Input(i) => {
                         let mut data = vec![0u8; (*i).into()];
                         self.input.read_exact(&mut data).expect("read from input");
                     }
-                    _ => (),
+                    Op::JumpZero(val) => {
+                        if self.tape[self.data] == 0 {
+                            self.instruction = *val;
+                        }
+                    }
+                    Op::JumpNonZero(val) => {
+                        if self.tape[self.data] != 0 {
+                            self.instruction = *val;
+                        }
+                    }
                 };
                 self.instruction += 1;
                 true
@@ -62,7 +73,7 @@ pub fn interpret(ops: Vec<Op>, inp: impl Read, out: impl Write) {
     while state.step() {
         max_data = max_data.max(state.data);
         // println!("{max_data:?} {:?}", &state.tape[0..max_data + 1]);
-        std::thread::sleep(Duration::from_millis(100))
+        // std::thread::sleep(Duration::from_millis(100))
     }
     state.output.flush().expect("flush");
 }
