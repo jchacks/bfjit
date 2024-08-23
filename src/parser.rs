@@ -42,20 +42,6 @@ impl Token {
             Self::Other => '#',
         }
     }
-
-    fn new_parser_op(&self) -> Option<ParserOp> {
-        match self {
-            Self::Inc => Some(ParserOp::Inc(1)),
-            Self::Dec => Some(ParserOp::Dec(1)),
-            Self::Right => Some(ParserOp::Right(1)),
-            Self::Left => Some(ParserOp::Left(1)),
-            Self::Output => Some(ParserOp::Output(1)),
-            Self::Input => Some(ParserOp::Input(1)),
-            Self::JumpZero => Some(ParserOp::JumpZero(None)),
-            Self::JumpNonZero => Some(ParserOp::JumpNonZero(None)),
-            Self::Other => None,
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -120,6 +106,7 @@ impl TryFrom<ParserOp> for Op {
 struct Parser {
     ops: Vec<ParserOp>,
     opened_jumps: Vec<usize>,
+    errors: Vec<ParserError>,
 }
 
 impl Parser {
@@ -127,6 +114,7 @@ impl Parser {
         Self {
             ops: Vec::new(),
             opened_jumps: Vec::new(),
+            errors: Vec::new(),
         }
     }
 }
@@ -134,11 +122,11 @@ impl Parser {
 pub fn parse(buffer: String) -> Result<Vec<Op>, ParserError> {
     let parser = Parser::new();
 
-    buffer
-        .chars()
-        .map(Token::parse)
-        .fold(parser, |mut parser, e| {
+    let parser = buffer.chars().map(Token::parse).try_fold(
+        parser,
+        |mut parser, e| -> Result<Parser, ParserError> {
             match parser.ops.last_mut() {
+                // TODO maybe there is a better way than repeating this statement.
                 Some(ParserOp::Inc(ref mut count)) if matches!(e, Token::Inc) => *count += 1,
                 Some(ParserOp::Dec(ref mut count)) if matches!(e, Token::Dec) => *count += 1,
                 Some(ParserOp::Right(ref mut count)) if matches!(e, Token::Right) => *count += 1,
@@ -148,45 +136,64 @@ pub fn parse(buffer: String) -> Result<Vec<Op>, ParserError> {
                 // Initialise the Operation
                 _ => {
                     let val = match e {
-                        Token::Inc => ParserOp::Inc(1),
-                        Token::Dec => ParserOp::Dec(1),
-                        Token::Right => ParserOp::Right(1),
-                        Token::Left => ParserOp::Left(1),
-                        Token::Output => ParserOp::Output(1),
-                        Token::Input => ParserOp::Input(1),
+                        Token::Inc => Ok(ParserOp::Inc(1)),
+                        Token::Dec => Ok(ParserOp::Dec(1)),
+                        Token::Right => Ok(ParserOp::Right(1)),
+                        Token::Left => Ok(ParserOp::Left(1)),
+                        Token::Output => Ok(ParserOp::Output(1)),
+                        Token::Input => Ok(ParserOp::Input(1)),
                         Token::JumpZero => {
                             parser.opened_jumps.push(parser.ops.len());
-                            ParserOp::JumpZero(None)
+                            Ok(ParserOp::JumpZero(None))
                         }
                         Token::JumpNonZero => {
                             let to_location = parser.ops.len();
-                            let from_location =
-                                parser.opened_jumps.pop().expect("open jump locations");
-                            let from = parser.ops.get_mut(from_location).expect("fetch jump from");
+                            let from_location = parser.opened_jumps.pop().ok_or(ParserError(
+                                "No open jump locations to match with".into(),
+                            ))?;
+                            let from = parser
+                                .ops
+                                .get_mut(from_location)
+                                .ok_or(ParserError(format!("No OP at location {from_location}")))?;
 
                             if let ParserOp::JumpZero(ref mut target) = from {
                                 if target.is_none() {
                                     *target = Some(to_location);
+                                    Ok(ParserOp::JumpNonZero(Some(from_location)))
                                 } else {
-                                    panic!("Targets location was not None!")
+                                    Err(ParserError(format!(
+                                        "Target {target:?} location was not None.  This indicates that it was set before."
+                                    )))
                                 }
                             } else {
-                                panic!("Unexpected type {from:?} found at jump from location")
+                                Err(ParserError(format!(
+                                    "Unexpected type {from:?} found at jump from location"
+                                )))
                             }
-                            ParserOp::JumpNonZero(Some(from_location))
                         }
-                        Token::Other => return parser,
+                        Token::Other => return Ok(parser),
                     };
-                    parser.ops.push(val)
+                    match val {
+                        Ok(v) => parser.ops.push(v),
+                        Err(v) => parser.errors.push(v),
+                    }
                 }
             }
-            parser
-        })
-        .ops
-        .into_iter()
-        .inspect(|pop| println!("{pop:?}"))
-        .collect::<Vec<ParserOp>>()
-        .into_iter()
-        .map(TryInto::<Op>::try_into)
-        .collect()
+            Ok(parser)
+        },
+    );
+
+    // TODO There is still the case of opened brackets with no closing bracket!
+
+    parser.map(|parser| {
+        parser
+            .ops
+            .into_iter()
+            .inspect(|pop| println!("{pop:?}"))
+            .collect::<Vec<ParserOp>>()
+            .into_iter()
+            .map(TryInto::<Op>::try_into)
+            .flat_map(|f| f.into_iter())
+            .collect()
+    })
 }
