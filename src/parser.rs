@@ -28,20 +28,6 @@ impl Token {
             _ => Token::Other,
         }
     }
-
-    fn char(&self) -> char {
-        match self {
-            Self::Inc => '+',
-            Self::Dec => '-',
-            Self::Right => '>',
-            Self::Left => '<',
-            Self::Output => '.',
-            Self::Input => ',',
-            Self::JumpZero => '[',
-            Self::JumpNonZero => ']',
-            Self::Other => '#',
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -53,22 +39,7 @@ pub enum ParserOp {
     Output(u8),
     Input(u8),
     JumpZero(Option<usize>),
-    JumpNonZero(Option<usize>),
-}
-
-impl ParserOp {
-    const fn token(&self) -> Token {
-        match self {
-            ParserOp::Inc(_) => Token::Inc,
-            ParserOp::Dec(_) => Token::Dec,
-            ParserOp::Right(_) => Token::Right,
-            ParserOp::Left(_) => Token::Left,
-            ParserOp::Output(_) => Token::Output,
-            ParserOp::Input(_) => Token::Input,
-            ParserOp::JumpZero(_) => Token::JumpZero,
-            ParserOp::JumpNonZero(_) => Token::JumpNonZero,
-        }
-    }
+    JumpNonZero(usize),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -96,9 +67,7 @@ impl TryFrom<ParserOp> for Op {
             ParserOp::JumpZero(v) => v
                 .ok_or(ParserError("Unknown jump to location".into()))
                 .map(Op::JumpZero),
-            ParserOp::JumpNonZero(v) => v
-                .ok_or(ParserError("Unknown jump to location".into()))
-                .map(Op::JumpNonZero),
+            ParserOp::JumpNonZero(v) => Ok(Op::JumpNonZero(v)),
         }
     }
 }
@@ -159,7 +128,7 @@ pub fn parse(buffer: String) -> Result<Vec<Op>, ParserError> {
                             if let ParserOp::JumpZero(ref mut target) = from {
                                 if target.is_none() {
                                     *target = Some(to_location);
-                                    Ok(ParserOp::JumpNonZero(Some(from_location)))
+                                    Ok(ParserOp::JumpNonZero(from_location))
                                 } else {
                                     Err(ParserError(format!(
                                         "Target {target:?} location was not None.  This indicates that it was set before."
@@ -182,8 +151,6 @@ pub fn parse(buffer: String) -> Result<Vec<Op>, ParserError> {
             Ok(parser)
         },
     );
-
-    // TODO There is still the case of opened brackets with no closing bracket!
 
     parser.map(|parser| {
         parser

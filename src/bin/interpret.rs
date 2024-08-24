@@ -1,9 +1,9 @@
 use log::info;
 
-use crate::interpreter::State;
-use std::io::{BufWriter, Read};
-mod interpreter;
-mod parser;
+use bfjit::interpreter::State;
+use bfjit::parser::parse;
+use std::io::Read;
+
 
 fn main() {
     env_logger::init();
@@ -12,7 +12,7 @@ fn main() {
     let mut stdin = std::io::stdin().lock();
     let num = stdin.read_to_string(&mut buffer).expect("read from stdin");
     info!("Read {num} chars");
-    let ops = parser::parse(buffer).expect("parse ops");
+    let ops = parse(buffer).expect("parse ops");
     info!("Ops: {ops:?}");
 
     let stdout = std::io::stdout().lock();
